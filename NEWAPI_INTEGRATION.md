@@ -120,3 +120,47 @@ curl http://<new-api地址>/v1/images/generations `
 ---
 
 *生成: 2026-10-28 · 交付会话: Genius Art 逆向 · 仓库 commit 455037d*
+
+---
+
+## 附录 A：并发实测（2026-10-28 补测）
+
+| 并发 | 结果 | Wall | p50 | 备注 |
+|---|---|---|---|---|
+| 4 | 4/4 | 18.3s | 13.9s | — |
+| 8 | 8/8 | 38.1s | 22.0s | 干净 prompt |
+| 8 | 8/8 | 33.1s | 21.3s | 复测 |
+| 上游直压 10（同 device） | 10×201 | 22.0s | — | 无配额限制 |
+
+**建议 new-api 侧并发上限 8**（瓶颈是上游生成 8~34s，不是加密桥）。
+
+⚠️ **重要修复**：demo_server 早期用单线程 `HTTPServer`，8 并发会出现 `连接被拒绝(10061)`
+（队列溢出，非上游问题）。已改 `ThreadingHTTPServer`，务必使用当前版本。
+
+## 附录 B：模型 / 端点清单
+
+### 已开放（demo 内 `genius-art`）
+- `POST /v5/tools/prompt-to-image` — 自由文生图，同步 201 返回 GCS URL，512×512
+
+### 同协议未开放（需扩展 demo_server.py）
+
+| 端点 | 功能 | 必需字段 |
+|---|---|---|
+| `predict-art` | **AI Art 风格模板生图**（1553 个风格：52 组=生肖/纹身/海盗/狼人/漫画/圣诞… + 100 种职业人像）| style, skin_color(0-3), num_image("1"), original_name([]) → 返回 `_id` 异步 |
+| `enhance-image` | 画质增强 | original_name(图片) |
+| `remove-background` | 抠图 | original_name(图片) |
+| `remove-object-auto-detect` | 自动去物 | original_name |
+| `remove-object-manual` | 手绘去物 | original_name |
+| `change-color` | 换色 | original_name, type_color |
+| `cartoon-3d` | 3D 卡通化 | original_name, style, is_change_bg… |
+| `image-to-ghibli` | 图生吉卜力 | original_name, strength |
+
+除 prompt-to-image / predict-art 外均需**先上传图片**（对应 `*/upload-image-status` 端点，multipart 流程未还原）。
+
+### 内容过滤（重要）
+上游 prompt 审核严格且难预测，实测：
+- ❌ `grass`（大麻联想）→ 410 `"The photo you choose contains sensitive content"`
+- ❌ `a cat sitting on grass`、`a cat on grass` → 410
+- ✅ `a cat`、`a dog sitting`、`a cat in ghibli style` → 正常出图
+
+410 也会偶发（同一干净 prompt 并发时命中），建议 new-api 侧把 410 当作可重试错误。
