@@ -230,3 +230,19 @@ curl http://127.0.0.1:8907/v1/images/generations   -H "Authorization: Bearer sk-
 
 风格模板会把输入照片的五官特征映射到模板人物上（保留眼镜/表情等细节），
 `num_image` >1 可一次出多张不同 seed。
+
+---
+
+## 附录 D：模型广场配置建议（已定案：挂 2 个）
+
+网关侧只需挂 **2 个模型**，1553 个风格是**请求参数**不是模型，不会撑爆模型广场：
+
+| 模型 ID | 场景 | new-api 侧要点 |
+|---|---|---|
+| `genius-art` | 通用文生图（**无需风格、无需图片**） | 走 `/v1/images/generations`，超时 ≥60s |
+| `genius-art-styled` | 照片→风格模板（1152×1536 高清） | 走 `/v1/images/edits`（multipart），超时 ≥120s |
+
+风格清单不进模型列表，需要时查 `GET /styles`（52 组 / 1553 个 style ID）由前端做下拉。
+
+**倍率建议**：`genius-art-styled` 输出尺寸是 `genius-art` 的 6.75 倍面积且耗时更短，
+可按张计价做差异定价；`genius-art` 按次定价。
