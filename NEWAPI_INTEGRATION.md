@@ -164,3 +164,69 @@ curl http://<new-api地址>/v1/images/generations `
 - ✅ `a cat`、`a dog sitting`、`a cat in ghibli style` → 正常出图
 
 410 也会偶发（同一干净 prompt 并发时命中），建议 new-api 侧把 410 当作可重试错误。
+
+---
+
+## 附录 C：模型 2 — genius-art-styled（图生风格，predict-art 异步链路已完整还原）
+
+> 2026-10-28 补齐。把上传照片映射进 1553 个风格模板，输出 **1152×1536 高清**，单图 5~10s（比文生图更快）。
+
+### 上游三步链路（已验证）
+
+```
+1) POST /v5/tools/predict-art
+   Bearer <JWT>, body={"data": encrypt({...})}
+   明文: {"type":"1","tier":"1","prompt":"...","style":"AM_01_v2",
+          "skin_color":0,"num_image":"1","original_name":["<uuid>.jpg"]}
+   → 201 {"_id":"<jobid>","link_upload":["https://storage.googleapis.com/...?Signature=..."]}
+
+2) PUT <link_upload[0]>   图片字节
+   ⚠️ 必须 Content-Type: application/octet-stream（GCS V2 签名把它算进去了，
+      用 image/jpeg 会 403 SignatureDoesNotMatch）
+
+3) POST /v5/tools/predict-art/upload-image-status
+   body={"data": encrypt({"_id":"<jobid>","status":1})}
+   → 201 {"result":{"url":"","arr_url":["https://storage.googleapis.com/art_v3/....jpg?..."],
+                    "seed":...,"face_strength":...}}
+   （通常第一次就返回结果；未完成时轮询同接口）
+```
+- `status` 是 **int**：`1` = 触发/查询，`0` = 删除任务（返回 "Delete success"）
+- `original_name` **必填且必须非空**（空数组会 400 `cannot get image_original`）
+- `skin_color` int 0~3，`num_image` 字符串（"1"）
+
+### demo 侧接口
+
+| 接口 | 说明 |
+|---|---|
+| `POST /v1/images/generations`，`model=genius-art-styled` | JSON：`{model, prompt, style, image}`，`image` 支持 base64 / data-url / http-url |
+| `POST /v1/images/edits` | 标准 multipart：`model/prompt/style/skin_color` + `image` 文件（推荐 OpenAI 客户端） |
+| `GET /styles` | 返回 52 组 / **1553 个风格 ID**（含分组名：生肖、纹身、海盗、狼人、漫画、圣诞…） |
+| `GET /v1/models` | 两个模型清单 |
+
+### 请求示例
+
+```bash
+# multipart（等同 OpenAI images/edits）
+curl http://127.0.0.1:8907/v1/images/edits   -H "Authorization: Bearer sk-geniusart-demo"   -F model=genius-art-styled -F style=CA_01_v2 -F skin_color=1   -F prompt="a pirate captain on deck" -F image=@photo.jpg
+
+# JSON（参考图用 URL 或 base64）
+curl http://127.0.0.1:8907/v1/images/generations   -H "Authorization: Bearer sk-geniusart-demo" -H "Content-Type: application/json"   -d '{"model":"genius-art-styled","style":"AM_01_v2","prompt":"hero portrait",
+       "image":"https://example.com/a.jpg"}'
+```
+
+### new-api 侧如何接
+- 同一渠道即可，模型列表加 `genius-art-styled`
+- 该模型是**图生图**，需客户端走 `/v1/images/edits`（multipart）；new-api 已支持该路径透传
+- 超时 ≥120s（含上传+生成），实际 5~10s
+
+### 并发实测（styled）
+| 并发 | 结果 | Wall | 单图延迟 |
+|---|---|---|---|
+| 4 | **4/4** | 10.4s | 5.6 / 7.6 / 8.2 / 10.4s |
+
+### 效果样例
+`examples/styled_captain.jpg`（Captain 风格 AM_01_v2，1152×1536）
+`examples/styled_pirate.jpg`（Pirate 风格 CA_01_v2，1152×1536）
+
+风格模板会把输入照片的五官特征映射到模板人物上（保留眼镜/表情等细节），
+`num_image` >1 可一次出多张不同 seed。
