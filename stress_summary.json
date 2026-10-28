@@ -1,0 +1,7 @@
+{
+ "R1_multiconn": "8/8 ok, p50=32.1s (4\u5e76\u53d1, 10 device)",
+ "R2_errors": "401/400 \u6b63\u786e; 4k prompt 200; \u5185\u5bb9\u8fc7\u6ee4 410(sensitive content); burst4 4/4 30.6s",
+ "R3_quota": "\u540c device 10 \u5e76\u53d1\u5168 201 \u2014 \u672a\u6d4b\u51fa\u914d\u989d\u4e0a\u9650",
+ "R4_pool": "get-token \u6bcf\u6b21\u968f\u673a device_id \u2192 \u5929\u7136\u65e0\u9650\u53f7\u6c60, JWT 14\u5929",
+ "latency": "\u5355\u56fe ~8-34s (\u4e0a\u6e38\u751f\u6210\u8017\u65f6), \u5e76\u53d1 4 \u65e0\u9000\u5316"
+}
